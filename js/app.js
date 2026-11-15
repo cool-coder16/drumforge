@@ -169,7 +169,7 @@
       const out = await DF.AI.generate({
         bars, bpm, seed: prm.seed, feats, styleId, density,
         temperature: 0.5 + prm.creativity * 0.9, follow: Math.min(1.3, prm.sync / 0.7),
-        ghostBias: (prm.ghost - 0.35) * 4, fillBias: (prm.fills - 0.55) * 5, humanize: prm.humanize,
+        ghostBias: (prm.ghost - 0.35) * 4, fills: Math.min(1, prm.fills * 1.4), humanize: prm.humanize,
         onProgress: (f) => { if (token === genToken) $('styleInfo').textContent = 'AI is writing the drum part… ' + Math.round(f * 100) + '%'; },
       });
       if (token !== genToken || state.mode !== mode) return; // superseded by a newer request

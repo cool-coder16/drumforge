@@ -326,7 +326,7 @@
             }
             let sum = 0, z1 = 0;
             for (let k = 0; k < N_CLASSES; k++) { probs[k] = Math.exp(probs[k] - mx); sum += probs[k]; z1 += Math.exp(lg[k] - mx1); }
-            const thr = minPfrac * Math.max(probs[0], probs[1], probs[2], probs[3]);
+            const thr = ((opt && opt.minP != null) ? opt.minP : minPfrac) * Math.max(probs[0], probs[1], probs[2], probs[3]);
             sum = 0;
             for (let k = 0; k < N_CLASSES; k++) { if (probs[k] < thr) probs[k] = 0; sum += probs[k]; }
             let r = rng() * sum, pick = N_CLASSES - 1;
@@ -359,7 +359,8 @@
     net.reset();
 
     // 1. Opening groove from scratch (audio-free mode)
-    if (!useAudio && bars >= 2) {
+    if (!useAudio) {
+      const open = Math.min(2, bars);   // 1-bar loops only need one bar
       const cands = [];
       for (let k = 0; k < 10; k++) {
         net.reset();
@@ -367,7 +368,7 @@
         sampleRange(buf, 0, 32, new Uint8Array(N_TRACKS), { lp });
         const h0 = hitsIn(buf, 0, 16), h1 = hitsIn(buf, 16, 32);
         const kicks = (() => { let n = 0; for (let s = 0; s < 32; s++) n += buf[s * N_TRACKS] > 0; return n; })();
-        if (okBar(h0) && okBar(h1) && kicks >= 2 && Math.abs(h0 - h1) <= 0.4 * Math.max(h0, h1)) cands.push({ buf, lp: lp.v / 32 });
+        if (okBar(h0) && (open < 2 || (okBar(h1) && Math.abs(h0 - h1) <= 0.4 * Math.max(h0, h1))) && kicks >= open) cands.push({ buf, lp: lp.v / 32 });
         if (o.onProgress) o.onProgress(0.05 * (k + 1) / 10);
       }
       let pick = null;
@@ -377,9 +378,9 @@
       }
       net.reset();
       if (pick) {
-        out.set(pick.buf, 0);
-        prev = feedRange(out, 0, 32, prev);
-        startBar = 2;
+        out.set(pick.buf.subarray(0, open * 16 * N_TRACKS), 0);
+        prev = feedRange(out, 0, open * 16, prev);
+        startBar = open;
       }
     }
 
@@ -422,15 +423,16 @@
       // phrase-end fill: pick the busiest of a few candidate second halves, then rewind so the groove carries on
       if (snapMid) {
         const normal = out.slice(s0 * N_TRACKS, s1 * N_TRACKS), baseline = (() => { let n = 0; for (let s = 8; s < 16; s++) for (const j of [1, 5, 6]) n += normal[s * N_TRACKS + j] > 0; return n; })();
-        let best = null;
-        for (let k = 0; k < 8; k++) {
+        const good = [];
+        for (let k = 0; k < 12; k++) {
           net.restore(snapMid);
           const buf = new Uint8Array(steps * N_TRACKS);
-          sampleRange(buf, s0 + 8, s1, prevMid, { cond: condFill, maxDist: 8, temp: temp * 1.15 });
+          sampleRange(buf, s0 + 8, s1, prevMid, { cond: condFill, maxDist: 8, temp: temp * 1.6, minP: 0 });
           let score = 0;
           for (let s = s0 + 8; s < s1; s++) for (const j of [1, 5, 6]) score += buf[s * N_TRACKS + j] > 0;
-          if (score >= 3 && score >= baseline + 2 && (!best || score > best.score)) best = { buf, score };
+          if (score >= 3 && score <= 10 && score >= baseline + 2) good.push({ buf, score }); // a real but not absurd fill
         }
+        const best = good.length ? good[Math.floor(rng() * good.length)] : null;
         net.restore(snapMid);
         if (best) {
           out.set(best.buf.subarray((s0 + 8) * N_TRACKS, s1 * N_TRACKS), (s0 + 8) * N_TRACKS);
