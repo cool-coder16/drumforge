@@ -1,0 +1,78 @@
+{
+ "nd": {
+  "n": 107,
+  "naive fixed rock beat (ignores the song)": {
+   "kick": 0.5721547136843778,
+   "snare": 0.6393162393162393,
+   "hat": 0.6639417282397946,
+   "all": 0.5331709612244333,
+   "barDensityCorr": 0
+  },
+  "classic rules engine": {
+   "kick": 0.4957597525690911,
+   "snare": 0.4093084910523603,
+   "hat": 0.5196328515054396,
+   "all": 0.4243980738362761,
+   "barDensityCorr": 0.19086751570668098
+  },
+  "neural drummer, audio switched OFF": {
+   "kick": 0.5805942299411512,
+   "snare": 0.630152329749104,
+   "hat": 0.6638891072504782,
+   "all": 0.5350213031561236,
+   "barDensityCorr": -0.0014306219666509873
+  },
+  "neural drummer, always listening": {
+   "kick": 0.5698308402069062,
+   "snare": 0.5231641202562839,
+   "hat": 0.5647585741456531,
+   "all": 0.457224856150026,
+   "barDensityCorr": 0.2290270137996202
+  },
+  "neural drummer, adaptive (the app)": {
+   "kick": 0.5847718644796218,
+   "snare": 0.6301463082681185,
+   "hat": 0.6626185149675082,
+   "all": 0.5323739042573528,
+   "barDensityCorr": 0.17267131485363865
+  }
+ },
+ "wd": {
+  "n": 93,
+  "naive fixed rock beat (ignores the song)": {
+   "kick": 0.5641910295986926,
+   "snare": 0.6166251630499229,
+   "hat": 0.7175179675253616,
+   "all": 0.5586282492953335,
+   "barDensityCorr": 0
+  },
+  "classic rules engine": {
+   "kick": 0.5951278195488722,
+   "snare": 0.4808743169398907,
+   "hat": 0.6670356882738528,
+   "all": 0.5180821733575415,
+   "barDensityCorr": 0.48715821067274684
+  },
+  "neural drummer, audio switched OFF": {
+   "kick": 0.5555832295558323,
+   "snare": 0.5969356979128966,
+   "hat": 0.7142433410452631,
+   "all": 0.5539401796462635,
+   "barDensityCorr": -0.0031887932272420356
+  },
+  "neural drummer, always listening": {
+   "kick": 0.6994422310756973,
+   "snare": 0.7258288163368208,
+   "hat": 0.7349073047060688,
+   "all": 0.6348975164231638,
+   "barDensityCorr": 0.5182949381919643
+  },
+  "neural drummer, adaptive (the app)": {
+   "kick": 0.6868639053254438,
+   "snare": 0.7148914941381891,
+   "hat": 0.7255439865328263,
+   "all": 0.6279055799147096,
+   "barDensityCorr": 0.46689563113044213
+  }
+ }
+}

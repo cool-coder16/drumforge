@@ -146,7 +146,7 @@ table.eval { border-collapse: collapse; width: 100%; font-size: 13px; min-width:
 table.eval th, table.eval td { padding: 7px 10px; text-align: right; border-bottom: 1px solid var(--line); font-variant-numeric: tabular-nums; }
 table.eval th:first-child, table.eval td:first-child { text-align: left; }
 table.eval thead th { color: var(--mute); font-weight: 600; font-size: 12px; }
-table.eval tr.best td { color: var(--good); font-weight: 700; }
+table.eval td.bestcell { color: var(--good); font-weight: 700; }
 table.eval td.grp, table.eval th.grp { border-left: 1px solid var(--line); }
 .ai-card a { color: var(--accent2); }
 .ai-card p { color: #c8c8e0; }

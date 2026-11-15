@@ -233,6 +233,55 @@
     return { shift: (4 - best) % 4, confidence: conf, scores: score };
   };
 
+  // ---- does the song already have drums? (logistic regression, see drumforge-ml/has_drums.py) ----
+  AI.loadHasDrums = async function (url) { AI.hd = await fetch(url).then((r) => r.json()); return AI.hd; };
+
+  // grid = DF.buildGrid(...). Returns the probability (0..1) that the audio contains drums, averaging over
+  // 24-bar windows of the song (the size it was trained on) that are not silent.
+  AI.detectDrums = function (grid) {
+    const m = AI.hd;
+    if (!m) return null;
+    const fl = 0.2, bars = grid.bars, NB = Math.min(24, bars);
+    if (NB < 8) return null;
+    const val = (a, i) => { const v = a[i]; return v < fl ? 0 : Math.min(1.2, v); };
+    const src = [grid.L, grid.M, grid.H];
+    const probs = [], all = [];
+    for (let b0 = 0; b0 + NB <= bars; b0 += 12) {
+      // average bar pattern (16 steps x 3 bands), overall density, bar-to-bar repetition, kick / backbeat / hat structure
+      const pat = new Float32Array(48), on = [0, 0, 0], bar = [];
+      let eMean = 0, kb = 0, ko = 0, sb = 0, s0 = 0, hm = 0, he = 0, ho = 0;
+      for (let b = 0; b < NB; b++) {
+        const v = new Float32Array(48);
+        for (let q = 0; q < 16; q++) for (let k = 0; k < 3; k++) {
+          const x = val(src[k], (b0 + b) * 16 + q);
+          v[q * 3 + k] = x; pat[q * 3 + k] += x / NB; on[k] += x / (NB * 16);
+          if (k === 0) { if (q % 4 === 0) kb += x; else if (q % 4 === 2) ko += x; }
+          if (k === 1) { if (q === 4 || q === 12) sb += x; else if (q === 0 || q === 8) s0 += x; }
+          if (k === 2) { hm += x; if (q % 2 === 0) he += x; else ho += x; }
+        }
+        bar.push(v); eMean += grid.E[b0 + b] / NB;
+      }
+      let rep = 0;
+      for (let b = 0; b + 1 < NB; b++) {
+        const a = bar[b], c = bar[b + 1];
+        let ma = 0, mc = 0;
+        for (let i = 0; i < 48; i++) { ma += a[i] / 48; mc += c[i] / 48; }
+        let sa = 0, sc = 0, sac = 0;
+        for (let i = 0; i < 48; i++) { sa += (a[i] - ma) ** 2; sc += (c[i] - mc) ** 2; sac += (a[i] - ma) * (c[i] - mc); }
+        rep += sa > 1e-9 && sc > 1e-9 ? sac / Math.sqrt(sa * sc) / (NB - 1) : 0;
+      }
+      const n4 = NB * 4, n2 = NB * 2;
+      const x = [...pat, ...on, rep, kb / n4 - ko / n4, sb / n2 - s0 / n2, hm / (NB * 16), he / (NB * 8) - ho / (NB * 8)];
+      let z = m.b;
+      for (let i = 0; i < x.length; i++) z += m.w[i] * ((x[i] - m.mu[i]) / m.sd[i]);
+      const p = 1 / (1 + Math.exp(-z));
+      all.push(p);
+      if (eMean > 0.25) probs.push(p);
+    }
+    const use = probs.length ? probs : all;
+    return use.length ? use.reduce((a, b) => a + b, 0) / use.length : null;
+  };
+
   const bucket = (x, cuts) => { let b = 0; while (b < cuts.length && x >= cuts[b]) b++; return b; };
   const VEL = [0, 0.3, 0.68, 0.97]; // velocity for each class: off / ghost / normal / accent
 
@@ -281,8 +330,13 @@
     if (!net) throw new Error('AI model not loaded');
     const rng = DF.makeRng(DF.hashString(String(o.seed)));
     const bars = o.bars, steps = bars * 16, K = cfg.n_styles;
-    const useAudio = !!o.feats && (o.follow == null || o.follow > 0);
-    const feats = useAudio ? AI.prepareFeatures(o.feats, o.floor) : null;
+    // The network can be given the song's onset features (useAudio). For drumless songs those features say little
+    // about what a drummer would play, so `drumless` keeps only the loudness curve E (silence, build-ups) and lets
+    // the network write from its own groove sense.
+    const rawFeats = o.feats ? AI.prepareFeatures(o.feats, o.floor) : null;
+    const E = rawFeats ? rawFeats.E : null;
+    const useAudio = !!rawFeats && (o.follow == null || o.follow > 0) && !o.drumless;
+    const feats = useAudio ? rawFeats : null;
     const gain = o.follow == null ? 1 : o.follow;
     let styleId = o.styleId == null ? -1 : o.styleId;
     if (styleId === -2) styleId = Math.floor(rng() * K); // "surprise"
@@ -307,7 +361,7 @@
       const prev = Uint8Array.from(prevIn), c = (opt && opt.cond) || cond, T_ = (opt && opt.temp) || temp;
       for (let s = s0; s < s1; s++) {
         const bar = Math.floor(s / 16), sib = s % 16;
-        const silent = feats && feats.E[bar] < 0.04; // keep the song's silent bars silent
+        const silent = E && E[bar] < 0.04; // keep the song's silent bars silent
         const h = net.step(prev, stepFeat(s), sib, bar % 8, c, opt && opt.maxDist);
         chosen.fill(0);
         if (!silent) {
@@ -391,9 +445,9 @@
     for (let bar = startBar; bar < bars; bar++) {
       const s0 = bar * 16, s1 = s0 + 16, snapStart = net.snapshot(), prevStart = Uint8Array.from(prev);
       const phraseEnd = bars >= 2 && bar > 0 && (bars >= 4 ? bar % 4 === 3 : bar === bars - 1);
-      const buildUp = feats && bar + 1 < bars && feats.E[bar + 1] - feats.E[bar] > 0.22;
-      const wantFill = phraseEnd && (!feats || feats.E[bar] > 0.25) && (buildUp || rng() < fillChance);
-      const silent = feats && feats.E[bar] < 0.04;
+      const buildUp = E && bar + 1 < bars && E[bar + 1] - E[bar] > 0.22;
+      const wantFill = phraseEnd && (!E || E[bar] > 0.25) && (buildUp || rng() < fillChance);
+      const silent = E && E[bar] < 0.04;
 
       const copt = crashNext ? { crashBias: crashNext } : null;
       crashNext = 0;
@@ -403,7 +457,7 @@
       prev = sampleRange(out, s0 + 8, s1, prev, null);
 
       // collapse guard: a bar that went (nearly) silent although the song isn't gets re-sampled, else copies the last bar
-      if (!feats && refHits.length >= 1 && !silent) {
+      if (!useAudio && refHits.length >= 1 && !silent) {
         const ref = refHits[refHits.length - 1];
         let tries = 0;
         while (hitsIn(out, s0, s1) < 0.5 * ref && tries++ < 4) {
@@ -447,6 +501,8 @@
       }
       if (o.onProgress) { o.onProgress((bar + 1) / bars); if (bar % 2 === 1) await tickCh(); }
     }
+
+    if (E && !useAudio) for (let b = 0; b < bars; b++) if (E[b] < 0.04) out.fill(0, b * 16 * N_TRACKS, (b + 1) * 16 * N_TRACKS);
 
     // classes -> velocities
     const pat = {};

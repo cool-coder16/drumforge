@@ -42,6 +42,9 @@
           <button class="chip btn" id="shiftBeat" title="Move where bar 1 starts by one beat">Shift 1 beat</button>
           <button class="chip btn" id="shiftHalf" title="Move where bar 1 starts by two beats (swap beats 1 and 3)">Shift &frac12; bar</button>
           <label class="chip">Nudge <input id="nudge" type="range" min="-120" max="120" value="0"><output id="nudgeOut">0 ms</output></label>
+          <label class="chip only-ai" title="Songs that already contain drums are followed closely; for drumless songs the AI writes from its own groove sense">Drums in the song
+            <select id="drumsMode"><option value="auto">Auto-detect</option><option value="yes">Has drums</option><option value="no">No drums</option></select>
+            <span id="drumsInfo" class="ai-status"></span></label>
         </div>
         <p class="hint">If the drums feel off, try &divide;2 / &times;2 for tempo, <em>Shift</em> if bar 1 starts in the wrong place (the snare should land on beats 2 and 4), or Nudge for tiny timing fixes.
           The faint bars in the Kick / Snare / Hat rows show what the analyser heard.</p>
@@ -70,7 +73,7 @@
         <label class="ctl"><span>Fills &amp; crashes <b id="fillsOut"></b></span>
           <input id="fills" type="range" min="0" max="100" value="55" data-regen></label>
         <label class="ctl only-ai"><span>Creativity <b id="creativityOut"></b></span>
-          <input id="creativity" type="range" min="0" max="100" value="45" data-regen></label>
+          <input id="creativity" type="range" min="0" max="100" value="25" data-regen></label>
         <label class="ctl only-audio"><span>Follow the song <b id="syncOut"></b></span>
           <input id="sync" type="range" min="0" max="100" value="70" data-regen></label>
         <label class="ctl"><span>Swing <b id="swingOut"></b></span>
@@ -137,12 +140,14 @@
 
     <section class="card ai-card" id="aiCard">
       <h2>About the AI drummer</h2>
-      <p>The drummer is a small causal transformer (4 layers, 1.7M parameters) trained from scratch on about <b>9,500 real songs</b>, roughly a million bars of human drumming with their accompaniment, taken from the <a href="https://colinraffel.com/projects/lmd/" target="_blank" rel="noopener">Lakh MIDI dataset</a>.
+      <p>The drummer is a small causal transformer (4 layers, 1.7M parameters). It was trained on about <b>9,500 real songs</b>, roughly a million bars of human drumming with their accompaniment, taken from the <a href="https://colinraffel.com/projects/lmd/" target="_blank" rel="noopener">Lakh MIDI dataset</a>.
         Its twelve styles were not written by hand: they are groups the model found by clustering the drum patterns of those songs.</p>
-      <p>To make it work on real audio rather than clean MIDI, each training excerpt was also <b>rendered to audio and analysed by this page's own analyser</b>, so the network learned from exactly the features it will be given when you upload a song.</p>
+      <p>Features measured from real audio look different from features read off MIDI notes, so after the first stage it was <b>fine-tuned on 12,500 excerpts that were rendered to audio and measured by this page's own analyser</b>. That way it learned from exactly the kind of signal it gets when you upload a song.
+        A second, tiny network decides which beat is beat 1.</p>
       <h3>How good is it?</h3>
       <p class="hint" style="margin-top:0">Held-out test songs by artists the model never saw. Each system hears only the song and tries to reproduce the part its real drummer played (F1 score on drum hits, 1.0 = identical). A fixed rock beat is included as a sanity baseline: real drummers play a lot of rock, so it scores well.</p>
       <div id="evalTable" class="eval-wrap"><span class="hint">loading results…</span></div>
+      <p class="hint" style="margin-top:0">Read it like this: when the song already has drums, the AI follows them well (overall 0.63 vs 0.52 for the old rules). When it has none, accompaniment says very little about what a drummer would play, so the AI writes from its own groove sense and only matches a plain rock beat on this score. Its edge there is that it fits the song's loudness, sections and fills.</p>
       <p class="hint">This is a small model trained on a hobby budget. It writes convincing grooves, but it is not a human drummer: it can't hear lyrics or read a mix, and its idea of a song's structure comes from the features above. Training data: Lakh MIDI Dataset (C. Raffel, CC BY 4.0). All training and evaluation code is in the <code>ml/</code> folder of the repository.</p>
     </section>
   </main>

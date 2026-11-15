@@ -167,7 +167,7 @@
       // Complexity -> "how many hits per bar" token. In song mode the model decides unless the user asked.
       const density = mode === 'random' || state.complexityTouched ? Math.round(prm.complexity * 7) : -1;
       const out = await DF.AI.generate({
-        bars, bpm, seed: prm.seed, feats, styleId, density,
+        bars, bpm, seed: prm.seed, feats, styleId, density, drumless: mode === 'audio' && songIsDrumless(),
         temperature: 0.5 + prm.creativity * 0.9, follow: Math.min(1.3, prm.sync / 0.7),
         ghostBias: (prm.ghost - 0.35) * 4, fills: Math.min(1, prm.fills * 1.4), humanize: prm.humanize,
         onProgress: (f) => { if (token === genToken) $('styleInfo').textContent = 'AI is writing the drum part… ' + Math.round(f * 100) + '%'; },
@@ -244,7 +244,7 @@
         tr.insertCell().textContent = n;
         ['nd', 'wd'].forEach((v) => ['all', 'kick', 'snare', 'hat'].forEach((k, i) => {
           const td = tr.insertCell(); td.textContent = res[v][n][k].toFixed(2); if (i === 0) td.className = 'grp';
-          if (k === 'all' && res[v][n].all === bestAll[v]) td.parentElement.classList.add('best');
+          if (k === 'all' && res[v][n].all === bestAll[v]) td.classList.add('bestcell');
         }));
       });
       host.replaceChildren(tbl);
@@ -265,6 +265,7 @@
     try {
       await DF.AI.load('models/');
       await DF.AI.loadDownbeat('models/downbeat.json').catch((e) => console.warn('downbeat model unavailable', e));
+      await DF.AI.loadHasDrums('models/has_drums.json').catch((e) => console.warn('drum detector unavailable', e));
       const n = DF.AI.cfg.tensors.reduce((a, t) => a + t.shape.reduce((x, y) => x * y, 1), 0);
       st.textContent = 'ready · ' + (n / 1e6).toFixed(1) + 'M-parameter transformer trained on ~9,500 real songs';
       st.classList.add('ok');
@@ -372,9 +373,22 @@
     return true;
   }
 
+  // Does the song already contain drums? (learned detector; the user can override it)
+  function updateDrumsInfo() {
+    const a = state.audio, el = $('drumsInfo');
+    if (!a || !el) return;
+    a.drumP = DF.AI.hd ? DF.AI.detectDrums(a.feats) : null;
+    el.textContent = a.drumP == null ? '' : (a.drumP >= 0.5 ? 'detected: drums' : 'detected: none') + ' (' + Math.round((a.drumP >= 0.5 ? a.drumP : 1 - a.drumP) * 100) + '%)';
+  }
+  const songIsDrumless = () => {
+    const a = state.audio, sel = $('drumsMode').value;
+    return sel === 'no' || (sel === 'auto' && !!a && a.drumP != null && a.drumP < 0.5);
+  };
+
   function rebuildGrid() {
     const a = state.audio;
     a.feats = DF.buildGrid(a.an, a.bpm, a.phase, a.barShift, a.nudge / 1000);
+    updateDrumsInfo();
   }
 
   function syncAudioUI() {
@@ -630,6 +644,7 @@
     document.addEventListener('drop', (e) => { e.preventDefault(); const f = e.dataTransfer.files[0]; if (f) loadFile(f); });
 
     // tempo / grid corrections
+    $('drumsMode').onchange = () => generate(false);
     $('abpm').onchange = () => { state.audio.bpm = +$('abpm').value || state.audio.bpm; regrid(true); };
     $('bpmHalf').onclick = () => { state.audio.bpm = Math.round((state.audio.bpm / 2) * 100) / 100; regrid(true); };
     $('bpmDouble').onclick = () => { state.audio.bpm = Math.round(state.audio.bpm * 2 * 100) / 100; regrid(true); };
