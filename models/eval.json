@@ -1,0 +1,64 @@
+{
+ "nd": {
+  "n": 57,
+  "naive fixed rock beat (ignores the song)": {
+   "kick": 0.5781478235465966,
+   "snare": 0.6389337641357028,
+   "hat": 0.6813554461597285,
+   "all": 0.5550420604424136,
+   "barDensityCorr": 0
+  },
+  "classic rules engine": {
+   "kick": 0.4934704084467908,
+   "snare": 0.40227178279540104,
+   "hat": 0.5232024073487488,
+   "all": 0.43236758442804873,
+   "barDensityCorr": 0.11190170593030593
+  },
+  "neural drummer, audio switched OFF": {
+   "kick": 0.5366637813775195,
+   "snare": 0.5659259259259259,
+   "hat": 0.49541806591154874,
+   "all": 0.447495451788963,
+   "barDensityCorr": 0.013486814558207409
+  },
+  "neural drummer, listening": {
+   "kick": 0.5227762974241847,
+   "snare": 0.4305661335364306,
+   "hat": 0.4811159844054581,
+   "all": 0.41933753862655465,
+   "barDensityCorr": 0.021988103618779103
+  }
+ },
+ "wd": {
+  "n": 43,
+  "naive fixed rock beat (ignores the song)": {
+   "kick": 0.5876245847176079,
+   "snare": 0.6131198347107438,
+   "hat": 0.6882712040524743,
+   "all": 0.5522471517439016,
+   "barDensityCorr": 0
+  },
+  "classic rules engine": {
+   "kick": 0.560949586556415,
+   "snare": 0.47433302667893285,
+   "hat": 0.6349349478294474,
+   "all": 0.49804704970333047,
+   "barDensityCorr": 0.5008975232176823
+  },
+  "neural drummer, audio switched OFF": {
+   "kick": 0.4761055634807418,
+   "snare": 0.4458322020092316,
+   "hat": 0.464,
+   "all": 0.40134675732217573,
+   "barDensityCorr": -0.027761905206156495
+  },
+  "neural drummer, listening": {
+   "kick": 0.594059405940594,
+   "snare": 0.5928228313082792,
+   "hat": 0.6307107509144374,
+   "all": 0.543474695791925,
+   "barDensityCorr": 0.4469038207338677
+  }
+ }
+}

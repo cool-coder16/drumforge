@@ -12,8 +12,11 @@
     muted: new Set(),
     cue: { step: 0, time: 0 },            // where Play will start
     rec: false,
-    styleByMode: { audio: 'auto', random: 'surprise' },
+    engine: 'ai',                         // 'ai' (neural network) or 'classic' (hand-written rules)
+    complexityTouched: false,             // AI only uses the Complexity slider once the user moves it (song mode)
+    styleSel: { audio: { ai: 'auto', classic: 'auto' }, random: { ai: 'surprise', classic: 'surprise' } },
   };
+  let genToken = 0;                       // lets a newer generation cancel an older, still-running one
 
   // ------------------------------------------------------------------ audio engine
   let ctx = null, master, drumGain, songGain, analyser, previewSynth, player;
@@ -53,7 +56,7 @@
   const pct = (id) => +$(id).value / 100;
 
   function updateOutputs() {
-    ['complexity', 'ghost', 'fills', 'sync', 'swing', 'humanize'].forEach((id) => ($(id + 'Out').textContent = $(id).value + '%'));
+    ['complexity', 'ghost', 'fills', 'sync', 'swing', 'humanize', 'creativity'].forEach((id) => ($(id + 'Out').textContent = $(id).value + '%'));
     $('rbpmOut').textContent = $('rbpm').value;
   }
 
@@ -61,9 +64,15 @@
     const sel = $('style');
     sel.innerHTML = '';
     const first = state.mode === 'audio' ? ['auto', 'Auto (follow the song)'] : ['surprise', 'Surprise me'];
-    const opts = [first].concat(DF.STYLE_LIST.map((id) => [id, DF.STYLE_LABELS[id]]), [['euclid', DF.STYLE_LABELS.euclid]]);
+    let opts;
+    if (state.engine === 'ai' && DF.AI.cfg) { // the styles the network discovered in its training data
+      opts = [first].concat(DF.AI.cfg.styles.map((st) => ['ai:' + st.id, st.name]));
+    } else {
+      opts = [first].concat(DF.STYLE_LIST.map((id) => [id, DF.STYLE_LABELS[id]]), [['euclid', DF.STYLE_LABELS.euclid]]);
+    }
     opts.forEach(([v, l]) => sel.append(new Option(l, v)));
-    sel.value = state.styleByMode[state.mode];
+    sel.value = state.styleSel[state.mode][state.engine];
+    if (sel.value !== state.styleSel[state.mode][state.engine]) sel.value = first[0];
   }
 
   function updatePlayUI() {
@@ -126,34 +135,60 @@
     return {
       style: $('style').value,
       complexity: pct('complexity'), ghost: pct('ghost'), fills: pct('fills'),
-      sync: pct('sync'), humanize: pct('humanize'),
+      sync: pct('sync'), humanize: pct('humanize'), creativity: pct('creativity'),
       seed: $('seed').value.trim() || 'GROOVE-1',
     };
   }
 
   // retune: after picking a style, also set tempo + swing to suit it (random mode only).
-  function generate(retune) {
+  async function generate(retune) {
     const prm = readParams();
+    const mode = state.mode;
     let bars, bpm, gridOffset = 0, feats = null;
-    if (state.mode === 'audio') {
+    if (mode === 'audio') {
       if (!state.audio) return;
       feats = state.audio.feats; bars = feats.bars; bpm = state.audio.bpm; gridOffset = feats.T0;
     } else {
       bars = +$('bars').value; bpm = +$('rbpm').value;
     }
-    const res = DF.generate(Object.assign({}, prm, { bars, feats }));
-    if (state.mode === 'random' && retune) {
-      const r = DF.makeRng(DF.hashString(prm.seed + '|bpm'));
-      bpm = Math.round(res.bpmRange[0] + r() * (res.bpmRange[1] - res.bpmRange[0]));
-      $('rbpm').value = bpm;
-      $('swing').value = Math.round(res.swing * 100);
-      updateOutputs();
+    const token = ++genToken;
+    let res;
+    if (state.engine === 'ai') {
+      const styles = DF.AI.cfg.styles, sel = prm.style;
+      let styleId = -1;
+      if (sel === 'surprise') styleId = styles[Math.floor(DF.makeRng(DF.hashString(prm.seed + '|style'))() * styles.length)].id;
+      else if (sel.startsWith('ai:')) styleId = +sel.slice(3);
+      if (mode === 'random' && retune && styleId >= 0) { // pick a tempo typical for that learned style
+        const r = DF.makeRng(DF.hashString(prm.seed + '|bpm'));
+        bpm = DF.clamp(Math.round(styles.find((st) => st.id === styleId).bpm * (0.88 + 0.24 * r())), 60, 200);
+        $('rbpm').value = bpm; $('swing').value = 0;
+        updateOutputs();
+      }
+      // Complexity -> "how many hits per bar" token. In song mode the model decides unless the user asked.
+      const density = mode === 'random' || state.complexityTouched ? Math.round(prm.complexity * 7) : -1;
+      const out = await DF.AI.generate({
+        bars, bpm, seed: prm.seed, feats, styleId, density,
+        temperature: 0.5 + prm.creativity * 0.9, follow: Math.min(1.3, prm.sync / 0.7),
+        ghostBias: (prm.ghost - 0.35) * 4, fillBias: (prm.fills - 0.55) * 5, humanize: prm.humanize,
+        onProgress: (f) => { if (token === genToken) $('styleInfo').textContent = 'AI is writing the drum part… ' + Math.round(f * 100) + '%'; },
+      });
+      if (token !== genToken || state.mode !== mode) return; // superseded by a newer request
+      res = { pattern: out.pattern, styleId, label: styleId >= 0 ? styles.find((st) => st.id === styleId).name : 'AI, listening to the song' };
+    } else {
+      res = DF.generate(Object.assign({}, prm, { bars, feats }));
+      if (mode === 'random' && retune) {
+        const r = DF.makeRng(DF.hashString(prm.seed + '|bpm'));
+        bpm = Math.round(res.bpmRange[0] + r() * (res.bpmRange[1] - res.bpmRange[0]));
+        $('rbpm').value = bpm;
+        $('swing').value = Math.round(res.swing * 100);
+        updateOutputs();
+      }
     }
     const project = {
-      name: '', mode: state.mode, bpm, bars, swing: pct('swing'), humanize: prm.humanize,
+      name: '', mode, bpm, bars, swing: pct('swing'), humanize: prm.humanize, engine: state.engine,
       kit: $('kit').value, gridOffset, pattern: res.pattern, styleLabel: res.label, styleId: res.styleId,
     };
-    $('styleInfo').textContent = (state.mode === 'audio' && prm.style === 'auto' ? 'Groove feels like: ' : 'Style: ') + res.label;
+    $('styleInfo').textContent = (state.engine === 'ai' ? 'AI · ' : '') + (mode === 'audio' && prm.style === 'auto' && state.engine === 'classic' ? 'Groove feels like: ' : 'Style: ') + res.label;
     setProject(project, true);
     writeHash();
     say('');
@@ -165,6 +200,7 @@
     const q = new URLSearchParams({
       s: $('style').value, b: $('rbpm').value, n: $('bars').value, c: $('complexity').value, g: $('ghost').value,
       f: $('fills').value, w: $('swing').value, h: $('humanize').value, k: $('kit').value, d: $('seed').value,
+      e: state.engine, t: $('creativity').value,
     });
     history.replaceState(null, '', '#' + q.toString());
   }
@@ -174,7 +210,9 @@
     const q = new URLSearchParams(location.hash.slice(1));
     if (!q.get('d')) return false;
     const set = (id, key) => { if (q.get(key) != null) $(id).value = q.get(key); };
-    state.styleByMode.random = q.get('s') || 'surprise';
+    state.engine = q.get('e') === 'ai' ? 'ai' : 'classic'; // links made before the AI existed carry no engine
+    state.styleSel.random[state.engine] = q.get('s') || 'surprise';
+    set('creativity', 't');
     fillStyleSelect();
     set('rbpm', 'b'); set('bars', 'n'); set('complexity', 'c'); set('ghost', 'g'); set('fills', 'f');
     set('swing', 'w'); set('humanize', 'h'); set('kit', 'k'); set('seed', 'd');
@@ -182,11 +220,78 @@
     return true;
   }
 
+  // ------------------------------------------------------------------ results table (models/eval.json)
+  async function renderEval() {
+    const host = $('evalTable');
+    try {
+      const res = await fetch('models/eval.json').then((r) => r.json());
+      const names = Object.keys(res.nd).filter((k) => k !== 'n');
+      const tbl = document.createElement('table');
+      tbl.className = 'eval';
+      const head = tbl.createTHead().insertRow();
+      ['System', 'Overall', 'Kick', 'Snare', 'Hats', 'Overall', 'Kick', 'Snare', 'Hats'].forEach((t, i) => {
+        const th = document.createElement('th'); th.textContent = t; if (i === 1 || i === 5) th.className = 'grp'; head.append(th);
+      });
+      const top = tbl.createTHead().insertRow(0);
+      const th0 = document.createElement('th'); top.append(th0);
+      [['Song without drums (' + res.nd.n + ' songs)', 'nd'], ['Song with drums in the mix (' + res.wd.n + ' songs)', 'wd']].forEach(([t]) => {
+        const th = document.createElement('th'); th.colSpan = 4; th.className = 'grp'; th.style.textAlign = 'center'; th.textContent = t; top.append(th);
+      });
+      const body = tbl.createTBody();
+      const bestAll = { nd: Math.max(...names.map((n) => res.nd[n].all)), wd: Math.max(...names.map((n) => res.wd[n].all)) };
+      names.forEach((n) => {
+        const tr = body.insertRow();
+        tr.insertCell().textContent = n;
+        ['nd', 'wd'].forEach((v) => ['all', 'kick', 'snare', 'hat'].forEach((k, i) => {
+          const td = tr.insertCell(); td.textContent = res[v][n][k].toFixed(2); if (i === 0) td.className = 'grp';
+          if (k === 'all' && res[v][n].all === bestAll[v]) td.parentElement.classList.add('best');
+        }));
+      });
+      host.replaceChildren(tbl);
+    } catch (e) {
+      host.textContent = 'Results unavailable.';
+    }
+  }
+
+  // ------------------------------------------------------------------ AI engine
+  function syncEngineUI() {
+    $('eng-ai').classList.toggle('active', state.engine === 'ai');
+    $('eng-classic').classList.toggle('active', state.engine === 'classic');
+    document.body.className = 'mode-' + state.mode + ' engine-' + state.engine;
+  }
+
+  async function loadModel() {
+    const st = $('aiStatus');
+    try {
+      await DF.AI.load('models/');
+      await DF.AI.loadDownbeat('models/downbeat.json').catch((e) => console.warn('downbeat model unavailable', e));
+      const n = DF.AI.cfg.tensors.reduce((a, t) => a + t.shape.reduce((x, y) => x * y, 1), 0);
+      st.textContent = 'ready · ' + (n / 1e6).toFixed(1) + 'M-parameter transformer trained on ~9,500 real songs';
+      st.classList.add('ok');
+    } catch (err) {
+      console.error(err);
+      st.textContent = 'could not load the AI model, using classic rules';
+      $('eng-ai').disabled = true;
+      state.engine = 'classic';
+      syncEngineUI();
+    }
+    fillStyleSelect();
+  }
+
+  function setEngine(e) {
+    if (e === state.engine || (e === 'ai' && !DF.AI.net)) return;
+    if (player) player.stop();
+    state.engine = e;
+    syncEngineUI();
+    fillStyleSelect();
+    generate(true);
+  }
+
   // ------------------------------------------------------------------ mode switching
   function switchMode(mode) {
     if (player) player.stop();
     state.mode = mode;
-    document.body.className = 'mode-' + mode;
+    document.body.className = 'mode-' + mode + ' engine-' + state.engine;
     $('tab-audio').classList.toggle('active', mode === 'audio');
     $('tab-random').classList.toggle('active', mode === 'random');
     $('audioBox').hidden = mode !== 'audio';
@@ -240,20 +345,31 @@
       return;
     }
     state.audio = { name, buffer, duration: Math.min(buffer.duration, an.duration), an, bpm: an.bpm, phase: an.phase, barShift: an.barShift, nudge: 0 };
+    aiBarShift(state.audio);
     rebuildGrid();
     $('seed').value = DF.randomSeed();
     state.undo.audio = [];
     state.slots.audio = null;
     state.cue = { step: 0, time: 0 };
-    state.styleByMode.audio = 'auto';
+    state.styleSel.audio[state.engine] = 'auto';
     fillStyleSelect();
     syncAudioUI();
     $('progress').hidden = true;
     $('analysis').hidden = false;
     $('swing').value = 0;
     updateOutputs();
-    generate(false);
+    await generate(false);
     roll.viewStart = 0;
+  }
+
+  // The learned downbeat detector (if loaded) overrides the old heuristic's guess for where bar 1 starts.
+  function aiBarShift(a) {
+    if (!DF.AI.db) return false;
+    const r = DF.AI.downbeat(DF.buildGrid(a.an, a.bpm, a.phase, 0, 0));
+    if (!r) return false;
+    a.barShift = r.shift;
+    a.downbeatConf = r.confidence;
+    return true;
   }
 
   function rebuildGrid() {
@@ -279,6 +395,7 @@
       a.bpm = DF.clamp(a.bpm, 40, 260);
       a.phase = DF.findPhase(a.an, a.bpm);
       a.barShift = DF.pickDownbeat(a.an, a.bpm, a.phase);
+      aiBarShift(a);
       a.nudge = 0;
     }
     rebuildGrid();
@@ -526,7 +643,7 @@
       el.addEventListener('input', updateOutputs);
       el.addEventListener('change', () => generate(false));
     });
-    $('style').onchange = () => { state.styleByMode[state.mode] = $('style').value; generate(true); };
+    $('style').onchange = () => { state.styleSel[state.mode][state.engine] = $('style').value; generate(true); };
     $('bars').onchange = () => generate(false);
     $('rbpm').oninput = () => {
       updateOutputs();
@@ -541,6 +658,7 @@
       if (state.project) state.project.kit = $('kit').value;
       writeHash();
     };
+    $('complexity').addEventListener('input', () => (state.complexityTouched = true));
     $('seed').onchange = () => generate(false);
     $('dice').onclick = () => { $('seed').value = DF.randomSeed(); generate(true); };
     $('regen').onclick = () => generate(false);
@@ -614,12 +732,17 @@
 
     updateOutputs();
     renderLibrary();
+    renderEval();
 
     // start in random mode (or restore from a share link)
+    $('eng-ai').onclick = () => setEngine('ai');
+    $('eng-classic').onclick = () => setEngine('classic');
     state.fromLink = readHash(); // a share link already carries tempo + swing, so don't retune
     if (!state.fromLink) $('seed').value = DF.randomSeed();
-    switchMode('random');
-    state.fromLink = false;
+    document.body.className = 'mode-random engine-' + state.engine;
+    syncEngineUI();
+    // Load the neural network first (a few MB), then build the first beat with it.
+    loadModel().then(() => { switchMode('random'); state.fromLink = false; });
     requestAnimationFrame(frame);
 
     // Handy for debugging in the console.

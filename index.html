@@ -13,7 +13,7 @@
     <canvas id="viz" aria-hidden="true"></canvas>
     <div class="hero-text">
       <h1>DRUM<span>FORGE</span></h1>
-      <p>Drop in a song and get a drum part that locks to its groove, or roll the dice for a brand-new beat.
+      <p>Drop in a song and a neural network writes a drum part that locks to its groove, or roll the dice for a brand-new beat.
         Play it, tweak it, save it. Everything runs in your browser; nothing is uploaded.</p>
     </div>
   </header>
@@ -50,6 +50,12 @@
 
     <!-- 2. Generator controls -->
     <section class="card controls" id="controls">
+      <div class="engine">
+        <span class="engine-label">Drummer</span>
+        <button id="eng-ai" class="seg active" title="A neural network trained on thousands of real songs">AI drummer</button>
+        <button id="eng-classic" class="seg" title="The original hand-written probability tables">Classic rules</button>
+        <span id="aiStatus" class="ai-status" role="status">loading the neural drummer…</span>
+      </div>
       <div class="ctl-grid">
         <label class="ctl"><span>Style</span>
           <select id="style"></select></label>
@@ -63,6 +69,8 @@
           <input id="ghost" type="range" min="0" max="100" value="35" data-regen></label>
         <label class="ctl"><span>Fills &amp; crashes <b id="fillsOut"></b></span>
           <input id="fills" type="range" min="0" max="100" value="55" data-regen></label>
+        <label class="ctl only-ai"><span>Creativity <b id="creativityOut"></b></span>
+          <input id="creativity" type="range" min="0" max="100" value="45" data-regen></label>
         <label class="ctl only-audio"><span>Follow the song <b id="syncOut"></b></span>
           <input id="sync" type="range" min="0" max="100" value="70" data-regen></label>
         <label class="ctl"><span>Swing <b id="swingOut"></b></span>
@@ -120,21 +128,32 @@
     <section class="card how">
       <h2>How it works</h2>
       <ol>
-        <li><b>Listen.</b> Your song is decoded and run through an FFT. For the low, mid and high frequency bands it measures where new energy appears: kick-ish, snare-ish and hat-ish onsets.</li>
-        <li><b>Find the beat.</b> Autocorrelation guesses the tempo, then a comb-filter search locks the exact BPM and bar position.</li>
-        <li><b>Write the part.</b> A style template gives how likely each drum is on each 16th note. Wherever the song has a real hit, that probability is boosted. Fills land at phrase ends and crashes where the song gets louder. A seeded random generator makes the same seed give the same beat every time.</li>
-        <li><b>Play it.</b> Every drum is synthesised live with the Web Audio API; there are no samples.</li>
+        <li><b>Listen.</b> Your song is decoded and run through an FFT. For a low, a mid and a high frequency band it measures where new energy appears. Autocorrelation and a comb-filter search lock the tempo and beat grid, and a small neural network works out which beat is beat 1.</li>
+        <li><b>Think.</b> A 1.7M-parameter transformer writes the drum part one 16th note at a time. At each step it sees the song's onset pattern around that moment, the drums it has already played, and where it is in the bar and phrase. It decides kick, snare, clap, hats, toms, crash and percussion together, with ghost notes and accents.</li>
+        <li><b>Play.</b> Every drum is synthesised live with the Web Audio API; there are no samples. Edit anything, then save or export.</li>
       </ol>
-      <p class="hint">This is a clever rule-based engine, not a trained AI model. It's fast, private and tweakable. Detection works best on songs with a steady tempo.</p>
+      <p class="hint">Prefer the original hand-written probability tables? Switch <em>Drummer</em> to <em>Classic rules</em>. Both engines run entirely in your browser.</p>
+    </section>
+
+    <section class="card ai-card" id="aiCard">
+      <h2>About the AI drummer</h2>
+      <p>The drummer is a small causal transformer (4 layers, 1.7M parameters) trained from scratch on about <b>9,500 real songs</b>, roughly a million bars of human drumming with their accompaniment, taken from the <a href="https://colinraffel.com/projects/lmd/" target="_blank" rel="noopener">Lakh MIDI dataset</a>.
+        Its twelve styles were not written by hand: they are groups the model found by clustering the drum patterns of those songs.</p>
+      <p>To make it work on real audio rather than clean MIDI, each training excerpt was also <b>rendered to audio and analysed by this page's own analyser</b>, so the network learned from exactly the features it will be given when you upload a song.</p>
+      <h3>How good is it?</h3>
+      <p class="hint" style="margin-top:0">Held-out test songs by artists the model never saw. Each system hears only the song and tries to reproduce the part its real drummer played (F1 score on drum hits, 1.0 = identical). A fixed rock beat is included as a sanity baseline: real drummers play a lot of rock, so it scores well.</p>
+      <div id="evalTable" class="eval-wrap"><span class="hint">loading results…</span></div>
+      <p class="hint">This is a small model trained on a hobby budget. It writes convincing grooves, but it is not a human drummer: it can't hear lyrics or read a mix, and its idea of a song's structure comes from the features above. Training data: Lakh MIDI Dataset (C. Raffel, CC BY 4.0). All training and evaluation code is in the <code>ml/</code> folder of the repository.</p>
     </section>
   </main>
 
-  <footer>DrumForge &middot; plain HTML/CSS/JS &middot; no tracking, no uploads</footer>
+  <footer>DrumForge &middot; plain HTML/CSS/JS &middot; no tracking, no uploads &middot; AI trained on the Lakh MIDI Dataset (CC BY 4.0)</footer>
 
   <script src="js/rng.js"></script>
   <script src="js/synth.js"></script>
   <script src="js/analyze.js"></script>
   <script src="js/generate.js"></script>
+  <script src="js/ai.js"></script>
   <script src="js/player.js"></script>
   <script src="js/export.js"></script>
   <script src="js/roll.js"></script>
