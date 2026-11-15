@@ -62,7 +62,7 @@ If the detected tempo or bar 1 is wrong, use ÷2 / ×2 for tempo, Shift 1 beat /
 
 1. **Analysis** (`js/analyze.js`): STFT, then spectral flux in three bands (low 30-160 Hz, mid 200-4k Hz, high 5-16k Hz) to find onsets; autocorrelation + a comb-filter search lock the tempo and beat grid; the flux is sampled on the 16th-note grid.
 2. **Downbeat** (`js/ai.js`, `models/downbeat.json`): an MLP slides over 24-beat windows and votes for the bar offset.
-3. **Drum generation** (`js/ai.js`, `models/drummer.bin`): the transformer, with a sliding-window KV cache so a whole song is cheap. About 4 ms per 16th note on a laptop CPU.
+3. **Drum generation** (`js/ai.js`, `models/drummer.bin`): the transformer, with a sliding-window KV cache so a whole song is cheap. About 1.5-4 ms per 16th note on a laptop CPU (a few seconds for a whole song; the app shows progress).
 4. **Sound** (`js/synth.js`): every drum is synthesised from oscillators and filtered noise; no sample files.
 5. **Playback** (`js/player.js`): a look-ahead scheduler on the Web Audio clock.
 
